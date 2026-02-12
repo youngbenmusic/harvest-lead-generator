@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harvest Med Waste — Lead Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <h1>Harvest Med Waste</h1>
+      <span class="header-sub">Lead Dashboard</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stats Bar -->
+    <section class="stats-bar" id="stats-bar">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Total Leads</div>
+      </div>
+      <div class="stat-card stat-new">
+        <div class="stat-value" id="stat-new">—</div>
+        <div class="stat-label">New This Week</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-contacted">—</div>
+        <div class="stat-label">Contacted</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-interested">—</div>
+        <div class="stat-label">Interested</div>
+      </div>
+      <div class="stat-card stat-conversion">
+        <div class="stat-value" id="stat-conversion">—</div>
+        <div class="stat-label">Conversion Rate</div>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters">
+      <input type="text" id="search" placeholder="Search by name or city..." autocomplete="off">
+      <select id="filter-type">
+        <option value="">All Facility Types</option>
+      </select>
+      <select id="filter-city">
+        <option value="">All Cities</option>
+      </select>
+      <select id="filter-status">
+        <option value="">All Statuses</option>
+        <option value="New">New</option>
+        <option value="Contacted">Contacted</option>
+        <option value="Interested">Interested</option>
+        <option value="Proposal Sent">Proposal Sent</option>
+        <option value="Closed Won">Closed Won</option>
+        <option value="Not Interested">Not Interested</option>
+      </select>
+    </section>
+
+    <!-- Results count -->
+    <div class="results-info">
+      <span id="results-count">Loading...</span>
+      <button id="export-btn" title="Export filtered leads to CSV">Export CSV</button>
+    </div>
+
+    <!-- Leads Table -->
+    <div class="table-wrap">
+      <table id="leads-table">
+        <thead>
+          <tr>
+            <th data-sort="name" class="sortable">Name <span class="sort-arrow"></span></th>
+            <th data-sort="facility_type" class="sortable">Type <span class="sort-arrow"></span></th>
+            <th data-sort="city" class="sortable">City <span class="sort-arrow"></span></th>
+            <th data-sort="phone" class="sortable hide-mobile">Phone <span class="sort-arrow"></span></th>
+            <th data-sort="status" class="sortable">Status <span class="sort-arrow"></span></th>
+          </tr>
+        </thead>
+        <tbody id="leads-body"></tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination"></div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
