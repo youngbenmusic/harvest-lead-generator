@@ -21,7 +21,7 @@
 
   async function loadLeads() {
     try {
-      const resp = await fetch("../data/alabama_leads.json");
+      const resp = await fetch("data/alabama_leads.json");
       if (!resp.ok) throw new Error(resp.statusText);
       allLeads = await resp.json();
     } catch (err) {
