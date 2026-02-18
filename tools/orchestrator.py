@@ -145,11 +145,15 @@ def stage_score(json_mode=False):
     return {"scored": len(leads)}
 
 
-def stage_export():
-    """Export stage: generate dashboard JSON from database."""
+def stage_export(json_mode=False):
+    """Export stage: generate dashboard JSON."""
     try:
-        from tools.export_dashboard import export
-        export()
+        if json_mode:
+            from tools.export_dashboard import export_from_json
+            export_from_json()
+        else:
+            from tools.export_dashboard import export
+            export()
         return {"exported": True}
     except Exception as e:
         print(f"  Export failed: {e}")
@@ -205,7 +209,7 @@ def run_pipeline(stages=None, json_mode=False, skip_ingest=False, crm_adapter=No
         elif stage_name == "score":
             ok = run_stage("score", lambda: stage_score(json_mode=json_mode), stage_results)
         elif stage_name == "export":
-            ok = run_stage("export", stage_export, stage_results)
+            ok = run_stage("export", lambda: stage_export(json_mode=json_mode), stage_results)
         elif stage_name == "crm_sync":
             ok = run_stage("crm_sync",
                            lambda: stage_crm_sync(adapter_name=crm_adapter or "json", min_score=min_score),

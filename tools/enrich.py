@@ -176,6 +176,8 @@ def enrich_from_json(plugin_names=None, dry_run=False):
 
     # Normalize field names if coming from legacy JSON
     for lead in leads:
+        if "name" in lead and "facility_name" not in lead:
+            lead["facility_name"] = lead["name"]
         if "address" in lead and "address_line1" not in lead:
             lead["address_line1"] = lead.get("address", "")
         if "zip" in lead and "zip5" not in lead:

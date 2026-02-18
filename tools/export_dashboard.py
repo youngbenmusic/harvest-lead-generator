@@ -15,12 +15,12 @@ import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from tools.db import fetch_all, close
-
 OUTPUT_FILE = os.path.join(PROJECT_ROOT, "data", "alabama_leads.json")
 
 
 def export():
+    from tools.db import fetch_all, close
+
     print("Exporting leads from database to dashboard JSON...")
 
     rows = fetch_all("""
@@ -77,6 +77,64 @@ def export():
 
     print(f"Exported {len(leads)} leads to {OUTPUT_FILE}")
     close()
+
+
+def export_from_json():
+    """Export scored leads from JSON pipeline to dashboard format.
+
+    Reads .tmp/scored_leads.json (or .tmp/enriched_leads.json as fallback)
+    and writes data/alabama_leads.json in the format the dashboard expects.
+    """
+    input_file = os.path.join(PROJECT_ROOT, ".tmp", "scored_leads.json")
+    if not os.path.exists(input_file):
+        input_file = os.path.join(PROJECT_ROOT, ".tmp", "enriched_leads.json")
+    if not os.path.exists(input_file):
+        print(f"ERROR: No scored/enriched JSON found in .tmp/")
+        return
+
+    print(f"Exporting from {input_file} to dashboard JSON...")
+    with open(input_file) as f:
+        leads = json.load(f)
+
+    dashboard_leads = []
+    for row in leads:
+        lead = {
+            "id": row.get("lead_uid") or row.get("id", ""),
+            "name": row.get("facility_name") or row.get("name", ""),
+            "facility_type": row.get("facility_type", ""),
+            "address": row.get("address_line1") or row.get("address", ""),
+            "address_2": row.get("address_line2") or row.get("address_2", ""),
+            "city": row.get("city", ""),
+            "county": row.get("county", ""),
+            "state": row.get("state", "AL"),
+            "zip": row.get("zip5") or row.get("zip", ""),
+            "phone": row.get("phone", ""),
+            "fax": row.get("fax", ""),
+            "taxonomy_code": row.get("taxonomy_code", ""),
+            "npi_number": row.get("npi_number", ""),
+            "status": row.get("status", "New"),
+            "notes": row.get("notes", ""),
+            "date_added": row.get("date_added", ""),
+            "new_this_week": row.get("new_this_week", False),
+            # Enrichment fields
+            "lead_score": row.get("lead_score", 0),
+            "priority_tier": row.get("priority_tier", ""),
+            "estimated_waste_lbs_per_day": row.get("estimated_waste_lbs_per_day"),
+            "waste_tier": row.get("waste_tier", ""),
+            "distance_from_birmingham": row.get("distance_from_birmingham"),
+            "service_zone": row.get("service_zone", ""),
+            "bed_count": row.get("bed_count"),
+            "latitude": row.get("latitude"),
+            "longitude": row.get("longitude"),
+            "facility_established_date": row.get("facility_established_date"),
+        }
+        dashboard_leads.append(lead)
+
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    with open(OUTPUT_FILE, "w") as f:
+        json.dump(dashboard_leads, f, indent=2)
+
+    print(f"Exported {len(dashboard_leads)} leads to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
