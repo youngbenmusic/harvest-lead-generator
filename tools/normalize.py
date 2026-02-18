@@ -109,6 +109,9 @@ def normalize_npi_record(raw_data):
 
     npi_number = str(raw_data.get("number", ""))
 
+    # Extract enumeration date (NPI registration date = proxy for facility age)
+    enumeration_date = basic.get("enumeration_date", "")
+
     return {
         "source": "npi",
         "source_id": f"npi-{npi_number}",
@@ -127,6 +130,7 @@ def normalize_npi_record(raw_data):
         "license_number": "",
         "taxonomy_code": taxonomy_code,
         "entity_type": entity_type,
+        "facility_established_date": enumeration_date if enumeration_date else None,
         # Normalized versions for matching
         "_norm_name": normalize_name(name),
         "_norm_address": normalize_address(address.get("address_1", "")),

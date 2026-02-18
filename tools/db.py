@@ -85,6 +85,8 @@ def upsert_lead(lead_data):
         "estimated_monthly_volume", "waste_tier", "distance_from_birmingham",
         "service_zone", "completeness_score", "lead_score", "priority_tier",
         "status", "notes", "date_added",
+        "latitude", "longitude", "facility_established_date",
+        "contract_expiry_date",
     ]
     present = {k: v for k, v in lead_data.items() if k in fields and v is not None}
     cols = list(present.keys())

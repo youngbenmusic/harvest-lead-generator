@@ -1,37 +1,84 @@
 """
-waste_volume.py — Estimate medical waste volume based on facility type and size.
+waste_volume.py — Estimate regulated medical waste (RMW) volume by facility type.
 
-Uses industry-standard estimates for medical waste generation rates
-per facility type, adjusted by bed count where available.
+Uses industry-standard estimates for RMW generation rates. Hospitals and
+nursing homes are per-bed calculations; all others are flat weekly estimates.
 """
 
 from tools.enrichment_plugins.base import EnrichmentPlugin
 
-# Waste volume estimates (lbs per day)
+# RMW volume estimates
+# For per-bed types: lbs RMW per bed per day
+# For flat types: lbs RMW per week
 WASTE_ESTIMATES = {
-    "Hospital":         {"base": 33, "per_bed": True,  "multiplier": 1.0},
-    "Surgery Center":   {"base": 50, "per_bed": False, "multiplier": 1.0},
-    "Nursing Home":     {"base": 5,  "per_bed": True,  "multiplier": 1.0},
-    "Dental":           {"base": 8,  "per_bed": False, "multiplier": 1.0},
-    "Urgent Care":      {"base": 15, "per_bed": False, "multiplier": 1.0},
-    "Lab":              {"base": 25, "per_bed": False, "multiplier": 1.0},
-    "Medical Practice": {"base": 5,  "per_bed": False, "multiplier": 1.0},
-    "Veterinary":       {"base": 8,  "per_bed": False, "multiplier": 1.0},
-    "Other":            {"base": 3,  "per_bed": False, "multiplier": 1.0},
+    "Hospital": {
+        "per_bed": True,
+        "daily_per_bed": 4.5,     # 30 lbs/bed/day total × 15% RMW
+        "default_beds": 150,      # Average Alabama hospital if bed count unknown
+    },
+    "Nursing Home": {
+        "per_bed": True,
+        "daily_per_bed": 0.75,    # 5 lbs/bed/day total × 15% RMW
+        "default_beds": 100,
+    },
+    "Surgery Center": {
+        "per_bed": False,
+        "weekly_lbs": 35,
+    },
+    "Dental": {
+        "per_bed": False,
+        "weekly_lbs": 2,          # Range 1-3
+    },
+    "Veterinary": {
+        "per_bed": False,
+        "weekly_lbs": 10,         # Range 5-15
+    },
+    "Urgent Care": {
+        "per_bed": False,
+        "weekly_lbs": 20,         # Range 10-30
+    },
+    "Lab": {
+        "per_bed": False,
+        "weekly_lbs": 20,
+    },
+    "Medical Practice": {
+        "per_bed": False,
+        "weekly_lbs": 5,
+    },
+    "Dialysis": {
+        "per_bed": False,
+        "weekly_lbs": 200,        # 20 lbs/station/week × default 10 stations
+    },
+    "Pharmacy": {
+        "per_bed": False,
+        "weekly_lbs": 3.5,        # Range 2-5
+    },
+    "Funeral Home": {
+        "per_bed": False,
+        "weekly_lbs": 7.5,        # Range 5-10
+    },
+    "Tattoo": {
+        "per_bed": False,
+        "weekly_lbs": 1.5,        # Range 1-2
+    },
+    "Other": {
+        "per_bed": False,
+        "weekly_lbs": 2,
+    },
 }
 
-# Waste tier thresholds (lbs/day)
+# Waste tier thresholds (lbs RMW per week)
 TIER_THRESHOLDS = [
-    (100, "High"),
-    (30,  "Medium"),
-    (10,  "Low"),
-    (0,   "Minimal"),
+    (50,  "High"),       # >50 lbs/week RMW
+    (10,  "Medium"),     # 10-50 lbs/week
+    (2,   "Low"),        # 2-10 lbs/week
+    (0,   "Minimal"),    # <2 lbs/week
 ]
 
 
 class WasteVolumeEstimator(EnrichmentPlugin):
     name = "waste_volume"
-    description = "Estimate daily and monthly medical waste volume"
+    description = "Estimate daily and monthly regulated medical waste volume"
 
     def can_enrich(self, lead: dict) -> bool:
         return bool(lead.get("facility_type"))
@@ -42,20 +89,21 @@ class WasteVolumeEstimator(EnrichmentPlugin):
 
         bed_count = lead.get("bed_count")
 
-        if config["per_bed"] and bed_count and bed_count > 0:
-            daily_lbs = config["base"] * bed_count * config["multiplier"]
+        if config["per_bed"]:
+            # Per-bed calculation (Hospital, Nursing Home)
+            beds = bed_count if bed_count and bed_count > 0 else config["default_beds"]
+            daily_lbs = config["daily_per_bed"] * beds
         else:
-            daily_lbs = config["base"] * config["multiplier"]
-            # If hospital without bed count, use average Alabama hospital size (~150 beds)
-            if facility_type == "Hospital" and not bed_count:
-                daily_lbs = config["base"] * 150
+            # Flat weekly estimate → convert to daily
+            daily_lbs = config["weekly_lbs"] / 7
 
         monthly_volume = daily_lbs * 30
+        weekly_lbs = daily_lbs * 7
 
-        # Determine waste tier
+        # Determine waste tier based on weekly volume
         waste_tier = "Minimal"
         for threshold, tier in TIER_THRESHOLDS:
-            if daily_lbs >= threshold:
+            if weekly_lbs >= threshold:
                 waste_tier = tier
                 break
 

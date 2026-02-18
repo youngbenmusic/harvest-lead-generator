@@ -38,6 +38,7 @@
       if (o) {
         if (o.status) lead.status = o.status;
         if (o.notes !== undefined) lead.notes = o.notes;
+        if (o.contract_expiry_date !== undefined) lead.contract_expiry_date = o.contract_expiry_date;
       }
     }
 
@@ -224,7 +225,17 @@
   function renderWasteInfo(lead) {
     const waste = lead.estimated_waste_lbs_per_day;
     if (!waste) return "\u2014";
-    return `${waste.toLocaleString()} lbs/day`;
+    const monthly = lead.estimated_monthly_volume || (waste * 30);
+    return `${waste.toLocaleString(undefined, {maximumFractionDigits: 1})} lbs/day (~${Math.round(monthly).toLocaleString()} lbs/mo)`;
+  }
+
+  function renderFacilityAge(lead) {
+    const estDate = lead.facility_established_date;
+    if (!estDate) return "\u2014";
+    const est = new Date(estDate);
+    const years = ((Date.now() - est.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    if (years < 1) return "< 1 year";
+    return `${Math.floor(years)} years (est. ${est.getFullYear()})`;
   }
 
   function renderDistance(lead) {
@@ -277,7 +288,7 @@
           <span>${lead.lead_score || 0} / 100 ${tierBadge}</span>
         </div>
         <div class="detail-field">
-          <label>Est. Waste Volume</label>
+          <label>Est. Regulated Medical Waste</label>
           <span>${renderWasteInfo(lead)}</span>
         </div>
         <div class="detail-field">
@@ -286,7 +297,20 @@
         </div>
         <div class="detail-field">
           <label>Bed Count</label>
-          <span>${lead.bed_count || "\u2014"}</span>
+          <span>${lead.bed_count != null ? lead.bed_count : "\u2014"}</span>
+        </div>
+        <div class="detail-field">
+          <label>Facility Age</label>
+          <span>${renderFacilityAge(lead)}</span>
+        </div>
+        <div class="detail-field">
+          <label>Contract Expiry</label>
+          <span>
+            <input type="date" class="detail-contract-expiry" data-id="${lead.id}"
+                   value="${lead.contract_expiry_date || ""}"
+                   style="border:1px solid #dee2e6; border-radius:4px; padding:4px 8px; font-size:0.9rem;">
+            ${!lead.contract_expiry_date ? '<span style="color:#6c757d; font-size:0.8rem; margin-left:6px;">Add contract expiry date to improve lead score</span>' : ""}
+          </span>
         </div>
         <div class="detail-field">
           <label>Date Added</label>
@@ -314,6 +338,15 @@
       saveOverride(lead.id, "status", newStatus);
       renderStats();
       renderTable();
+    });
+
+    // Bind contract expiry date change
+    const expiryInput = td.querySelector(".detail-contract-expiry");
+    expiryInput.addEventListener("click", (e) => e.stopPropagation());
+    expiryInput.addEventListener("change", (e) => {
+      e.stopPropagation();
+      lead.contract_expiry_date = e.target.value || null;
+      saveOverride(lead.id, "contract_expiry_date", e.target.value || null);
     });
 
     // Bind notes change (debounced auto-save)
@@ -410,13 +443,16 @@
   function exportCSV() {
     const headers = ["Name", "Facility Type", "Address", "City", "State", "ZIP",
                      "Phone", "Fax", "NPI", "Taxonomy", "Status", "Notes", "Date Added",
-                     "Lead Score", "Priority Tier", "Est. Waste (lbs/day)",
-                     "Distance (mi)", "Service Zone", "Bed Count"];
+                     "Lead Score", "Priority Tier", "Est. RMW (lbs/day)",
+                     "Distance (mi)", "Service Zone", "Bed Count",
+                     "Latitude", "Longitude", "Facility Est. Date", "Contract Expiry"];
     const rows = filtered.map((l) => [
       l.name, l.facility_type, l.address, l.city, l.state, l.zip,
       l.phone, l.fax, l.npi_number, l.taxonomy_code, l.status, l.notes, l.date_added,
       l.lead_score || "", l.priority_tier || "", l.estimated_waste_lbs_per_day || "",
-      l.distance_from_birmingham || "", l.service_zone || "", l.bed_count || "",
+      l.distance_from_birmingham || "", l.service_zone || "", l.bed_count != null ? l.bed_count : "",
+      l.latitude || "", l.longitude || "", l.facility_established_date || "",
+      l.contract_expiry_date || "",
     ]);
 
     let csv = headers.map(csvEsc).join(",") + "\n";

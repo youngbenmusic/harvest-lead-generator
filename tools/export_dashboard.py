@@ -31,7 +31,8 @@ def export():
             bed_count, estimated_waste_lbs_per_day, estimated_monthly_volume,
             waste_tier, distance_from_birmingham, service_zone,
             completeness_score, lead_score, priority_tier,
-            status, notes, date_added, first_seen, last_updated
+            status, notes, date_added, first_seen, last_updated,
+            latitude, longitude, facility_established_date
         FROM leads
         ORDER BY facility_type, facility_name
     """)
@@ -64,6 +65,9 @@ def export():
             "distance_from_birmingham": float(row["distance_from_birmingham"]) if row["distance_from_birmingham"] else None,
             "service_zone": row["service_zone"] or "",
             "bed_count": row["bed_count"],
+            "latitude": float(row["latitude"]) if row["latitude"] else None,
+            "longitude": float(row["longitude"]) if row["longitude"] else None,
+            "facility_established_date": row["facility_established_date"].isoformat() if row["facility_established_date"] else None,
         }
         leads.append(lead)
 

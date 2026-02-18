@@ -3,14 +3,14 @@ score_leads.py — Weighted lead scoring model.
 
 Scores leads on a 0-100 scale based on:
   - Waste volume potential (35%)
-  - Facility type priority (25%)
-  - Geographic proximity to Birmingham (20%)
-  - Data completeness (10%)
-  - Source confidence (10%)
+  - Distance from Birmingham (25%)
+  - Facility type priority (20%)
+  - Contract expiry proximity (10%)
+  - Facility age / NPI enumeration date (10%)
 
 Priority tiers:
-  - Hot (80-100): Large facilities, close to Birmingham, high waste volume
-  - Warm (50-79): Mid-size facilities or further distance
+  - Hot (75-100): Large facilities, close to Birmingham, high waste volume
+  - Warm (50-74): Mid-size facilities or further distance
   - Cool (25-49): Small facilities, limited data
   - Cold (0-24): Minimal waste generators or very distant
 
@@ -23,47 +23,43 @@ import json
 import os
 import sys
 import argparse
+from datetime import datetime, date
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-# Facility type priority scores (out of 25)
+# Facility type priority scores (out of 20)
 FACILITY_TYPE_SCORES = {
-    "Hospital": 25,
-    "Surgery Center": 22,
-    "Nursing Home": 20,
-    "Lab": 18,
-    "Urgent Care": 16,
-    "Dental": 14,
-    "Veterinary": 12,
-    "Medical Practice": 10,
-    "Other": 5,
+    "Hospital": 20,
+    "Surgery Center": 18,
+    "Nursing Home": 16,
+    "Lab": 14,
+    "Urgent Care": 12,
+    "Dialysis": 11,
+    "Dental": 10,
+    "Veterinary": 8,
+    "Medical Practice": 6,
+    "Pharmacy": 4,
+    "Funeral Home": 3,
+    "Tattoo": 2,
+    "Other": 1,
 }
 
-# Distance-based proximity scores (out of 20)
+# Distance-based proximity scores (out of 25)
 PROXIMITY_THRESHOLDS = [
-    (30,  20),   # <30 miles from Birmingham
-    (60,  15),   # <60 miles
-    (100, 10),   # <100 miles
-    (150, 5),    # <150 miles
+    (30,  25),   # <30 miles from Birmingham
+    (60,  20),   # <60 miles
+    (100, 15),   # <100 miles
+    (150, 8),    # <150 miles
     (9999, 2),   # >150 miles
 ]
-
-# Source confidence scores (out of 10)
-SOURCE_SCORES = {
-    "npi_and_adph": 10,
-    "adph_only": 7,
-    "npi_only": 5,
-    "cms_only": 4,
-    "unknown": 3,
-}
 
 # Maximum daily waste for normalization (lbs/day)
 MAX_WASTE_FOR_SCORING = 5000  # Large hospital ~5000 lbs/day
 
 # Tier thresholds
 TIER_THRESHOLDS = [
-    (80, "Hot"),
+    (75, "Hot"),
     (50, "Warm"),
     (25, "Cool"),
     (0,  "Cold"),
@@ -76,23 +72,22 @@ def score_waste_volume(lead):
     if not waste or waste <= 0:
         return 5  # Baseline for unknown waste volume
 
-    # Normalize to 0-35 scale with diminishing returns
+    # Normalize to 0-35 scale with diminishing returns (square root)
     normalized = min(waste / MAX_WASTE_FOR_SCORING, 1.0)
-    # Use square root for diminishing returns (big hospitals don't dominate too much)
     return round(normalized ** 0.5 * 35, 1)
 
 
 def score_facility_type(lead):
-    """Score facility type priority (0-25 scale)."""
+    """Score facility type priority (0-20 scale)."""
     facility_type = lead.get("facility_type", "Other")
-    return FACILITY_TYPE_SCORES.get(facility_type, 5)
+    return FACILITY_TYPE_SCORES.get(facility_type, 1)
 
 
 def score_proximity(lead):
-    """Score geographic proximity to Birmingham (0-20 scale)."""
+    """Score geographic proximity to Birmingham (0-25 scale)."""
     distance = lead.get("distance_from_birmingham")
     if distance is None:
-        return 8  # Midpoint for unknown distance
+        return 10  # Midpoint for unknown distance
 
     for threshold, score in PROXIMITY_THRESHOLDS:
         if distance <= threshold:
@@ -100,37 +95,67 @@ def score_proximity(lead):
     return 2
 
 
-def score_completeness(lead):
-    """Score data completeness (0-10 scale)."""
-    completeness = lead.get("completeness_score", 0)
-    return round(completeness * 10, 1)
+def score_contract_expiry(lead):
+    """Score contract expiry proximity (0-10 scale).
+
+    Known expiring within 6mo = 10
+    Known expiring within 1yr = 7
+    Unknown = 5 (neutral)
+    Locked >1yr = 2
+    """
+    expiry_str = lead.get("contract_expiry_date")
+    if not expiry_str:
+        return 5  # Neutral for unknown
+
+    try:
+        if isinstance(expiry_str, date):
+            expiry = expiry_str
+        else:
+            expiry = datetime.strptime(str(expiry_str)[:10], "%Y-%m-%d").date()
+
+        days_until = (expiry - date.today()).days
+
+        if days_until <= 0:
+            return 10  # Already expired — hot opportunity
+        elif days_until <= 180:
+            return 10  # Expiring within 6 months
+        elif days_until <= 365:
+            return 7   # Expiring within 1 year
+        else:
+            return 2   # Locked >1 year
+    except (ValueError, TypeError):
+        return 5  # Can't parse — treat as unknown
 
 
-def score_source_confidence(lead):
-    """Score source confidence (0-10 scale)."""
-    sources = lead.get("sources", [])
-    if not sources:
-        # Infer from available fields
-        has_npi = bool(lead.get("npi_number"))
-        has_adph = bool(lead.get("license_number") or lead.get("administrator"))
-        if has_npi and has_adph:
-            return SOURCE_SCORES["npi_and_adph"]
-        elif has_adph:
-            return SOURCE_SCORES["adph_only"]
-        elif has_npi:
-            return SOURCE_SCORES["npi_only"]
-        return SOURCE_SCORES["unknown"]
+def score_facility_age(lead):
+    """Score facility age from NPI enumeration date (0-10 scale).
 
-    source_types = set(s.get("source", "") for s in sources)
-    if "npi" in source_types and "adph" in source_types:
-        return SOURCE_SCORES["npi_and_adph"]
-    elif "adph" in source_types:
-        return SOURCE_SCORES["adph_only"]
-    elif "npi" in source_types:
-        return SOURCE_SCORES["npi_only"]
-    elif "cms" in source_types:
-        return SOURCE_SCORES["cms_only"]
-    return SOURCE_SCORES["unknown"]
+    Newer facilities are higher priority — they may not have
+    established waste disposal contracts yet.
+    <2 years = 10, <5 years = 8, <10 years = 5, >10 years = 3
+    """
+    est_str = lead.get("facility_established_date")
+    if not est_str:
+        return 5  # Neutral for unknown
+
+    try:
+        if isinstance(est_str, date):
+            est_date = est_str
+        else:
+            est_date = datetime.strptime(str(est_str)[:10], "%Y-%m-%d").date()
+
+        years = (date.today() - est_date).days / 365.25
+
+        if years < 2:
+            return 10
+        elif years < 5:
+            return 8
+        elif years < 10:
+            return 5
+        else:
+            return 3
+    except (ValueError, TypeError):
+        return 5  # Can't parse — treat as unknown
 
 
 def get_tier(score):
@@ -146,11 +171,11 @@ def score_lead(lead):
     waste_score = score_waste_volume(lead)
     type_score = score_facility_type(lead)
     proximity_score = score_proximity(lead)
-    completeness_score = score_completeness(lead)
-    source_score = score_source_confidence(lead)
+    contract_score = score_contract_expiry(lead)
+    age_score = score_facility_age(lead)
 
     total = round(waste_score + type_score + proximity_score +
-                  completeness_score + source_score)
+                  contract_score + age_score)
     total = min(total, 100)
 
     tier = get_tier(total)
@@ -159,8 +184,8 @@ def score_lead(lead):
         "waste_volume": waste_score,
         "facility_type": type_score,
         "proximity": proximity_score,
-        "completeness": completeness_score,
-        "source_confidence": source_score,
+        "contract_expiry": contract_score,
+        "facility_age": age_score,
     }
 
     return total, tier, breakdown
@@ -233,7 +258,8 @@ def score_from_db():
         SELECT id, lead_uid, facility_name, facility_type, city, zip5,
                npi_number, license_number, administrator,
                bed_count, estimated_waste_lbs_per_day,
-               distance_from_birmingham, completeness_score
+               distance_from_birmingham, completeness_score,
+               facility_established_date, contract_expiry_date
         FROM leads
     """)
 

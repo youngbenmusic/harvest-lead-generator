@@ -13,6 +13,12 @@ from tools.normalize import normalize_name, normalize_address
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CMS_FILE = os.path.join(PROJECT_ROOT, ".tmp", "cms_pos_alabama.json")
 
+# Facility types that never have beds — set explicitly to 0
+NO_BED_TYPES = {
+    "Dental", "Veterinary", "Urgent Care", "Pharmacy",
+    "Tattoo", "Funeral Home", "Medical Practice", "Lab",
+}
+
 
 class CMSBedCountEnricher(EnrichmentPlugin):
     name = "cms_bed_count"
@@ -21,6 +27,7 @@ class CMSBedCountEnricher(EnrichmentPlugin):
     def __init__(self):
         self._cms_data = None
         self._name_index = {}
+        self._address_index = {}
         self._loaded = False
 
     def _load(self):
@@ -51,22 +58,41 @@ class CMSBedCountEnricher(EnrichmentPlugin):
             self._cms_data = []
             return
 
-        # Build name index for fast lookups
+        # Build name and address indexes for fast lookups
         for rec in self._cms_data:
             name = normalize_name(rec.get("facility_name", ""))
             if name:
                 self._name_index[name] = rec
 
+            # Build address index: normalized "address|city"
+            addr = normalize_address(rec.get("address", ""))
+            city = (rec.get("city", "") or "").upper().strip()
+            if addr and city:
+                key = f"{addr}|{city}"
+                self._address_index[key] = rec
+
     def can_enrich(self, lead: dict) -> bool:
         self._load()
-        if not self._cms_data:
-            return False
-        # Only try for hospitals and larger facilities
         facility_type = lead.get("facility_type", "")
-        return facility_type in ("Hospital", "Nursing Home", "Surgery Center")
+
+        # Non-bed facility types: set bed_count=0, no CMS lookup needed
+        if facility_type in NO_BED_TYPES:
+            return not lead.get("bed_count") and lead.get("bed_count") != 0
+
+        # Only query CMS for Hospital, Nursing Home, Surgery Center
+        if facility_type not in ("Hospital", "Nursing Home", "Surgery Center"):
+            return False
+
+        return bool(self._cms_data)
 
     def enrich(self, lead: dict) -> dict:
         self._load()
+        facility_type = lead.get("facility_type", "")
+
+        # Explicitly set 0 beds for non-bed facility types
+        if facility_type in NO_BED_TYPES:
+            return {"bed_count": 0}
+
         if not self._cms_data:
             return {}
 
@@ -74,21 +100,37 @@ class CMSBedCountEnricher(EnrichmentPlugin):
         if lead.get("bed_count"):
             return {}
 
-        # Try matching by normalized name
-        lead_name = normalize_name(lead.get("facility_name", ""))
-        cms_rec = self._name_index.get(lead_name)
+        cms_rec = None
+        match_confidence = 0.0
 
-        if not cms_rec:
-            # Try partial name matching
+        # Try exact name match first
+        lead_name = normalize_name(lead.get("facility_name", ""))
+        if lead_name and lead_name in self._name_index:
+            cms_rec = self._name_index[lead_name]
+            match_confidence = 1.0
+
+        # Try partial name matching
+        if not cms_rec and lead_name:
             for name, rec in self._name_index.items():
-                if lead_name and name and (lead_name in name or name in lead_name):
+                if name and (lead_name in name or name in lead_name):
                     cms_rec = rec
+                    match_confidence = 0.8
                     break
+
+        # Fallback: address-based matching
+        if not cms_rec:
+            lead_addr = normalize_address(lead.get("address_line1", ""))
+            lead_city = (lead.get("city", "") or "").upper().strip()
+            if lead_addr and lead_city:
+                key = f"{lead_addr}|{lead_city}"
+                if key in self._address_index:
+                    cms_rec = self._address_index[key]
+                    match_confidence = 0.7
 
         if not cms_rec:
             return {}
 
-        result = {}
+        result = {"_cms_match_confidence": match_confidence}
         if cms_rec.get("bed_count"):
             result["bed_count"] = cms_rec["bed_count"]
         if cms_rec.get("hospital_type"):
