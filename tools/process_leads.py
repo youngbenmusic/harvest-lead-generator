@@ -69,6 +69,9 @@ TAXONOMY_MAP = [
     ("315", "Nursing Home"),
     ("324", "Nursing Home"),
 
+    # Dialysis Facilities
+    ("261QR0206", "Dialysis"),  # Ambulatory Dialysis Clinic
+
     # Clinics (catch-all for 261 after Urgent Care is matched)
     ("261QM", "Medical Practice"),
     ("261Q", "Medical Practice"),
@@ -76,6 +79,7 @@ TAXONOMY_MAP = [
 
     # Medical Practice (physicians, specialists)
     ("207Q", "Medical Practice"),  # Family Medicine
+    ("207RN", "Dialysis"),          # Nephrology (dialysis physicians)
     ("207R", "Medical Practice"),  # Internal Medicine
     ("207", "Medical Practice"),
     ("208", "Medical Practice"),
@@ -90,9 +94,9 @@ TAXONOMY_MAP = [
     ("235", "Medical Practice"),  # Speech-Language Pathologist
     ("111", "Medical Practice"),  # Chiropractor
     ("152", "Medical Practice"),  # Optometry
-    ("213", "Medical Practice"),  # Podiatry
+    ("213", "Podiatry"),          # Podiatry
     ("332", "Other"),  # Pharmacy
-    ("333", "Other"),  # Dialysis
+    ("333", "Dialysis"),          # Dialysis Equipment / Suppliers
     ("273", "Other"),  # Home Health
 ]
 

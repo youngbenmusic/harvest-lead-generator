@@ -68,7 +68,7 @@ ADPH_TO_FACILITY_TYPE = {
     "Clinical Laboratories": "Lab",
     "Home Health Agencies": "Other",
     "Hospices": "Other",
-    "End Stage Renal Disease Facilities": "Other",
+    "End Stage Renal Disease Facilities": "Dialysis",
     "Rehabilitation Centers": "Other",
     "Rural Health Clinics": "Medical Practice",
     "Portable X-Ray Suppliers": "Other",

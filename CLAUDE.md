@@ -15,6 +15,9 @@ Every facility that generates medical waste is a potential client:
 - Funeral homes
 - Nursing homes and assisted living facilities
 - Physician private practices (family medicine, orthopedic, etc.)
+- Podiatry offices
+- Dialysis centers
+- Medical spas (aesthetic clinics)
 
 ## Geographic Focus
 - Primary: Alabama (all counties)

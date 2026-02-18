@@ -17,6 +17,7 @@ CMS_FILE = os.path.join(PROJECT_ROOT, ".tmp", "cms_pos_alabama.json")
 NO_BED_TYPES = {
     "Dental", "Veterinary", "Urgent Care", "Pharmacy",
     "Tattoo", "Funeral Home", "Medical Practice", "Lab",
+    "Podiatry", "Dialysis", "Medical Spa",
 }
 
 

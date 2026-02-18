@@ -70,7 +70,7 @@ def run_stage(name, func, stage_results):
         return False
 
 
-def stage_ingest(skip_npi=False, skip_adph=False, skip_cms=False, json_mode=False):
+def stage_ingest(skip_npi=False, skip_adph=False, skip_cms=False, skip_medspa=False, json_mode=False):
     """Ingest stage: download data from all sources."""
     results = {}
 
@@ -99,6 +99,16 @@ def stage_ingest(skip_npi=False, skip_adph=False, skip_cms=False, json_mode=Fals
         except Exception as e:
             print(f"  CMS download failed (non-fatal): {e}")
             results["cms"] = f"failed: {e}"
+
+    if not skip_medspa:
+        print("\n--- Medical Spa (Google Places) Ingest ---")
+        try:
+            from tools.scrape_medical_spa import scrape_medical_spas
+            spas = scrape_medical_spas(json_only=json_mode)
+            results["medspa"] = f"{len(spas)} medical spas"
+        except Exception as e:
+            print(f"  MedSpa scraping failed (non-fatal): {e}")
+            results["medspa"] = f"failed: {e}"
 
     return results
 
@@ -167,7 +177,7 @@ def stage_crm_sync(adapter_name="json", min_score=50):
     return stats
 
 
-def run_pipeline(stages=None, json_mode=False, skip_ingest=False, crm_adapter=None, min_score=50):
+def run_pipeline(stages=None, json_mode=False, skip_ingest=False, skip_medspa=False, crm_adapter=None, min_score=50):
     """Run the full pipeline or specific stages."""
     print("=" * 60)
     print("  HARVEST MED WASTE — LEAD PIPELINE")
@@ -199,7 +209,7 @@ def run_pipeline(stages=None, json_mode=False, skip_ingest=False, crm_adapter=No
 
     for stage_name in stages:
         if stage_name == "ingest":
-            ok = run_stage("ingest", lambda: stage_ingest(json_mode=json_mode), stage_results)
+            ok = run_stage("ingest", lambda: stage_ingest(skip_medspa=skip_medspa, json_mode=json_mode), stage_results)
         elif stage_name == "normalize":
             ok = run_stage("normalize", lambda: stage_normalize(json_mode=json_mode), stage_results)
         elif stage_name == "deduplicate":
@@ -265,6 +275,8 @@ if __name__ == "__main__":
                         help="Use JSON files instead of database")
     parser.add_argument("--skip-ingest", action="store_true",
                         help="Skip data download (use existing cached data)")
+    parser.add_argument("--skip-medspa", action="store_true",
+                        help="Skip medical spa Google Places scraping")
     parser.add_argument("--crm", type=str, choices=["json", "hubspot", "pipedrive"],
                         help="CRM adapter for sync stage")
     parser.add_argument("--min-score", type=int, default=50,
@@ -277,6 +289,7 @@ if __name__ == "__main__":
         stages=stages,
         json_mode=args.json,
         skip_ingest=args.skip_ingest,
+        skip_medspa=args.skip_medspa,
         crm_adapter=args.crm,
         min_score=args.min_score,
     )

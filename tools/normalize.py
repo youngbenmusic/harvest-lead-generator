@@ -194,6 +194,34 @@ def normalize_cms_record(raw_data):
     }
 
 
+def normalize_medspa_record(raw_data):
+    """Transform a raw Google Places medical spa record into the common schema."""
+    name = raw_data.get("facility_name", "")
+    return {
+        "source": "google_places",
+        "source_id": f"gp-{raw_data.get('place_id', '')}",
+        "facility_name": name,
+        "facility_type": "Medical Spa",
+        "address_line1": raw_data.get("address", ""),
+        "address_line2": "",
+        "city": raw_data.get("city", ""),
+        "state": "AL",
+        "zip5": raw_data.get("zip", "")[:5],
+        "county": "",
+        "phone": clean_phone(raw_data.get("phone", "")),
+        "fax": "",
+        "administrator": "",
+        "npi_number": "",
+        "license_number": "",
+        "taxonomy_code": "",
+        "entity_type": "NPI-2",  # Business entity
+        "latitude": raw_data.get("latitude"),
+        "longitude": raw_data.get("longitude"),
+        "_norm_name": normalize_name(name),
+        "_norm_address": normalize_address(raw_data.get("address", "")),
+    }
+
+
 def load_from_db(source=None):
     """Load raw records from staging tables."""
     from tools.db import fetch_all
@@ -262,6 +290,16 @@ def load_from_json():
             cms_count += 1
         print(f"  CMS (JSON): {cms_count} records normalized")
 
+    medspa_file = os.path.join(PROJECT_ROOT, ".tmp", "medspa_results.json")
+    if os.path.exists(medspa_file):
+        with open(medspa_file) as f:
+            raw = json.load(f)
+        medspa_count = 0
+        for r in raw:
+            records.append(normalize_medspa_record(r))
+            medspa_count += 1
+        print(f"  MedSpa (JSON): {medspa_count} records normalized")
+
     return records
 
 
@@ -302,7 +340,7 @@ def normalize_all(source=None, use_json=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Normalize raw data sources")
-    parser.add_argument("--source", choices=["npi", "adph", "cms"], help="Normalize only this source")
+    parser.add_argument("--source", choices=["npi", "adph", "cms", "google_places"], help="Normalize only this source")
     parser.add_argument("--json", action="store_true", help="Read from .tmp JSON files instead of DB")
     args = parser.parse_args()
     normalize_all(source=args.source, use_json=args.json)

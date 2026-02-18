@@ -49,6 +49,14 @@ WASTE_ESTIMATES = {
         "per_bed": False,
         "weekly_lbs": 200,        # 20 lbs/station/week × default 10 stations
     },
+    "Podiatry": {
+        "per_bed": False,
+        "weekly_lbs": 4,          # Sharps, pathological tissue, range 2-6
+    },
+    "Medical Spa": {
+        "per_bed": False,
+        "weekly_lbs": 3,          # Sharps (injectables), range 2-5
+    },
     "Pharmacy": {
         "per_bed": False,
         "weekly_lbs": 3.5,        # Range 2-5
