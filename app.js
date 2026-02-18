@@ -9,8 +9,8 @@
   let allLeads = [];
   let filtered = [];
   let currentPage = 1;
-  let sortCol = "name";
-  let sortDir = "asc";
+  let sortCol = "lead_score";
+  let sortDir = "desc";
   let expandedId = null;
 
   // ── Bootstrap ──────────────────────────────────────────────
@@ -88,6 +88,7 @@
     document.getElementById("filter-type").addEventListener("change", applyFilters);
     document.getElementById("filter-city").addEventListener("change", applyFilters);
     document.getElementById("filter-status").addEventListener("change", applyFilters);
+    document.getElementById("filter-tier").addEventListener("change", applyFilters);
     document.getElementById("export-btn").addEventListener("click", exportCSV);
 
     document.querySelectorAll("th.sortable").forEach((th) => {
@@ -97,7 +98,7 @@
           sortDir = sortDir === "asc" ? "desc" : "asc";
         } else {
           sortCol = col;
-          sortDir = "asc";
+          sortDir = col === "lead_score" ? "desc" : "asc";
         }
         applyFilters();
       });
@@ -109,11 +110,13 @@
     const typeFilter = document.getElementById("filter-type").value;
     const cityFilter = document.getElementById("filter-city").value;
     const statusFilter = document.getElementById("filter-status").value;
+    const tierFilter = document.getElementById("filter-tier").value;
 
     filtered = allLeads.filter((l) => {
       if (typeFilter && l.facility_type !== typeFilter) return false;
       if (cityFilter && l.city !== cityFilter) return false;
       if (statusFilter && l.status !== statusFilter) return false;
+      if (tierFilter && l.priority_tier !== tierFilter) return false;
       if (query) {
         const haystack = (l.name + " " + l.city).toLowerCase();
         if (!haystack.includes(query)) return false;
@@ -121,8 +124,13 @@
       return true;
     });
 
-    // Sort
+    // Sort — numeric sort for lead_score
     filtered.sort((a, b) => {
+      if (sortCol === "lead_score") {
+        const va = a.lead_score || 0;
+        const vb = b.lead_score || 0;
+        return sortDir === "desc" ? vb - va : va - vb;
+      }
       let va = (a[sortCol] || "").toString().toLowerCase();
       let vb = (b[sortCol] || "").toString().toLowerCase();
       if (va < vb) return sortDir === "asc" ? -1 : 1;
@@ -150,7 +158,7 @@
       allLeads.filter((l) => l.status === "Proposal Sent").length +
       closedWon +
       allLeads.filter((l) => l.status === "Not Interested").length;
-    const rate = worked > 0 ? ((closedWon / worked) * 100).toFixed(1) + "%" : "—";
+    const rate = worked > 0 ? ((closedWon / worked) * 100).toFixed(1) + "%" : "\u2014";
 
     document.getElementById("stat-total").textContent = total.toLocaleString();
     document.getElementById("stat-new").textContent = newWeek.toLocaleString();
@@ -169,7 +177,7 @@
     const page = filtered.slice(start, start + PAGE_SIZE);
 
     document.getElementById("results-count").textContent =
-      `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, filtered.length)} of ${filtered.length.toLocaleString()} leads`;
+      `Showing ${start + 1}\u2013${Math.min(start + PAGE_SIZE, filtered.length)} of ${filtered.length.toLocaleString()} leads`;
 
     for (const lead of page) {
       // Main row
@@ -187,6 +195,7 @@
         </td>
         <td>${escHtml(lead.facility_type)}</td>
         <td>${escHtml(titleCase(lead.city))}</td>
+        <td class="hide-mobile">${renderScore(lead)}</td>
         <td class="hide-mobile">${escHtml(lead.phone)}</td>
         <td>${statusPill(lead.status)}</td>
       `;
@@ -199,14 +208,43 @@
     }
   }
 
+  function renderScore(lead) {
+    const score = lead.lead_score || 0;
+    const tier = lead.priority_tier || "";
+    if (!score && !tier) return '<span class="score-badge score-none">\u2014</span>';
+    const cls = {
+      Hot: "score-hot",
+      Warm: "score-warm",
+      Cool: "score-cool",
+      Cold: "score-cold",
+    }[tier] || "score-none";
+    return `<span class="score-badge ${cls}">${score}</span>`;
+  }
+
+  function renderWasteInfo(lead) {
+    const waste = lead.estimated_waste_lbs_per_day;
+    if (!waste) return "\u2014";
+    return `${waste.toLocaleString()} lbs/day`;
+  }
+
+  function renderDistance(lead) {
+    const dist = lead.distance_from_birmingham;
+    if (!dist) return "\u2014";
+    return `${dist} mi`;
+  }
+
   function buildDetailRow(lead) {
     const tr = document.createElement("tr");
     tr.classList.add("detail-row");
     const td = document.createElement("td");
-    td.colSpan = 5;
+    td.colSpan = 6;
 
     const fullAddr = [lead.address, lead.city, lead.state, lead.zip]
       .filter(Boolean).join(", ");
+
+    const tierBadge = lead.priority_tier
+      ? `<span class="tier-badge tier-${(lead.priority_tier || "").toLowerCase()}">${escHtml(lead.priority_tier)}</span>`
+      : "\u2014";
 
     td.innerHTML = `
       <div class="detail-panel">
@@ -216,11 +254,11 @@
         </div>
         <div class="detail-field">
           <label>Phone</label>
-          <span>${lead.phone ? `<a href="tel:${lead.phone.replace(/\D/g, "")}">${escHtml(lead.phone)}</a>` : "—"}</span>
+          <span>${lead.phone ? `<a href="tel:${lead.phone.replace(/\D/g, "")}">${escHtml(lead.phone)}</a>` : "\u2014"}</span>
         </div>
         <div class="detail-field">
           <label>Fax</label>
-          <span>${escHtml(lead.fax || "—")}</span>
+          <span>${escHtml(lead.fax || "\u2014")}</span>
         </div>
         <div class="detail-field">
           <label>NPI Number</label>
@@ -233,6 +271,22 @@
         <div class="detail-field">
           <label>Facility Type</label>
           <span>${escHtml(lead.facility_type)}</span>
+        </div>
+        <div class="detail-field">
+          <label>Lead Score</label>
+          <span>${lead.lead_score || 0} / 100 ${tierBadge}</span>
+        </div>
+        <div class="detail-field">
+          <label>Est. Waste Volume</label>
+          <span>${renderWasteInfo(lead)}</span>
+        </div>
+        <div class="detail-field">
+          <label>Distance from Birmingham</label>
+          <span>${renderDistance(lead)} ${lead.service_zone ? `(${escHtml(lead.service_zone)})` : ""}</span>
+        </div>
+        <div class="detail-field">
+          <label>Bed Count</label>
+          <span>${lead.bed_count || "\u2014"}</span>
         </div>
         <div class="detail-field">
           <label>Date Added</label>
@@ -355,10 +409,14 @@
 
   function exportCSV() {
     const headers = ["Name", "Facility Type", "Address", "City", "State", "ZIP",
-                     "Phone", "Fax", "NPI", "Taxonomy", "Status", "Notes", "Date Added"];
+                     "Phone", "Fax", "NPI", "Taxonomy", "Status", "Notes", "Date Added",
+                     "Lead Score", "Priority Tier", "Est. Waste (lbs/day)",
+                     "Distance (mi)", "Service Zone", "Bed Count"];
     const rows = filtered.map((l) => [
       l.name, l.facility_type, l.address, l.city, l.state, l.zip,
       l.phone, l.fax, l.npi_number, l.taxonomy_code, l.status, l.notes, l.date_added,
+      l.lead_score || "", l.priority_tier || "", l.estimated_waste_lbs_per_day || "",
+      l.distance_from_birmingham || "", l.service_zone || "", l.bed_count || "",
     ]);
 
     let csv = headers.map(csvEsc).join(",") + "\n";

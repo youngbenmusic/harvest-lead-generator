@@ -299,6 +299,40 @@ tr.detail-row td {
   margin-top: 4px;
 }
 
+/* === Score Badges (table column) === */
+.score-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 32px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-align: center;
+  letter-spacing: 0.2px;
+}
+.score-hot  { background: var(--red-bg); color: var(--red); border: 1px solid #ffc9c9; }
+.score-warm { background: var(--amber-bg); color: var(--amber); border: 1px solid #ffe066; }
+.score-cool { background: var(--blue-bg); color: var(--blue-accent); border: 1px solid #a5d8ff; }
+.score-cold { background: var(--gray-100); color: var(--gray-500); border: 1px solid var(--gray-300); }
+.score-none { background: var(--gray-100); color: var(--gray-400); }
+
+/* === Tier Badges (detail panel) === */
+.tier-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.tier-hot  { background: var(--red); color: var(--white); }
+.tier-warm { background: var(--amber); color: var(--white); }
+.tier-cool { background: var(--blue-accent); color: var(--white); }
+.tier-cold { background: var(--gray-500); color: var(--white); }
+
 /* === Pagination === */
 .pagination {
   display: flex;

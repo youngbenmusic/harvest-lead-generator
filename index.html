@@ -58,6 +58,13 @@
         <option value="Closed Won">Closed Won</option>
         <option value="Not Interested">Not Interested</option>
       </select>
+      <select id="filter-tier">
+        <option value="">All Tiers</option>
+        <option value="Hot">Hot</option>
+        <option value="Warm">Warm</option>
+        <option value="Cool">Cool</option>
+        <option value="Cold">Cold</option>
+      </select>
     </section>
 
     <!-- Results count -->
@@ -74,6 +81,7 @@
             <th data-sort="name" class="sortable">Name <span class="sort-arrow"></span></th>
             <th data-sort="facility_type" class="sortable">Type <span class="sort-arrow"></span></th>
             <th data-sort="city" class="sortable">City <span class="sort-arrow"></span></th>
+            <th data-sort="lead_score" class="sortable hide-mobile">Score <span class="sort-arrow"></span></th>
             <th data-sort="phone" class="sortable hide-mobile">Phone <span class="sort-arrow"></span></th>
             <th data-sort="status" class="sortable">Status <span class="sort-arrow"></span></th>
           </tr>
