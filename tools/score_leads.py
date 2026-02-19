@@ -2,17 +2,17 @@
 score_leads.py — Weighted lead scoring model.
 
 Scores leads on a 0-100 scale based on:
-  - Waste volume potential (35%)
-  - Distance from Birmingham (25%)
-  - Facility type priority (20%)
-  - Contract expiry proximity (10%)
-  - Facility age / NPI enumeration date (10%)
+  - Facility type priority (30%)
+  - Waste volume potential (25%)
+  - Distance from Birmingham (15%)
+  - Data confidence (15%)
+  - Opportunity window (15%)
 
-Priority tiers:
-  - Hot (75-100): Large facilities, close to Birmingham, high waste volume
-  - Warm (50-74): Mid-size facilities or further distance
-  - Cool (25-49): Small facilities, limited data
-  - Cold (0-24): Minimal waste generators or very distant
+Tier assignment uses percentile cutoffs to guarantee a usable distribution:
+  - Hot:  top 12%
+  - Warm: next 28%
+  - Cool: next 35%
+  - Cold: bottom 25%
 
 Usage:
     python tools/score_leads.py
@@ -20,6 +20,7 @@ Usage:
 """
 
 import json
+import math
 import os
 import sys
 import argparse
@@ -28,144 +29,226 @@ from datetime import datetime, date
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-# Facility type priority scores (out of 20)
+from tools.enrichment_plugins.geo_distance import AL_ZIP_CENTROIDS, haversine, BIRMINGHAM_LAT, BIRMINGHAM_LON
+
+# Facility type priority scores (out of 30)
 FACILITY_TYPE_SCORES = {
-    "Hospital": 20,
-    "Surgery Center": 18,
-    "Nursing Home": 16,
-    "Lab": 14,
-    "Urgent Care": 12,
-    "Dialysis": 11,
-    "Dental": 10,
-    "Veterinary": 8,
-    "Podiatry": 7,
-    "Medical Practice": 6,
-    "Medical Spa": 5,
+    "Hospital": 30,
+    "Surgery Center": 27,
+    "Dialysis": 23,
+    "Nursing Home": 20,
+    "Lab": 17,
+    "Urgent Care": 15,
+    "Dental": 12,
+    "Veterinary": 10,
+    "Podiatry": 8,
+    "Medical Practice": 7,
+    "Medical Spa": 6,
     "Pharmacy": 4,
     "Funeral Home": 3,
     "Tattoo": 2,
     "Other": 1,
 }
 
-# Distance-based proximity scores (out of 25)
+# Distance-based proximity scores (out of 15)
 PROXIMITY_THRESHOLDS = [
-    (30,  25),   # <30 miles from Birmingham
-    (60,  20),   # <60 miles
-    (100, 15),   # <100 miles
-    (150, 8),    # <150 miles
-    (9999, 2),   # >150 miles
+    (30,  15),   # <30 miles from Birmingham
+    (60,  12),   # <60 miles
+    (100, 9),    # <100 miles
+    (150, 5),    # <150 miles
+    (9999, 1),   # >150 miles
 ]
 
 # Maximum daily waste for normalization (lbs/day)
 MAX_WASTE_FOR_SCORING = 5000  # Large hospital ~5000 lbs/day
 
-# Tier thresholds
-TIER_THRESHOLDS = [
-    (75, "Hot"),
-    (50, "Warm"),
-    (25, "Cool"),
-    (0,  "Cold"),
-]
+
+def _zip_to_distance(zip5):
+    """Compute distance from Birmingham using ZIP centroid table.
+
+    Returns distance in miles, or None if ZIP prefix not found.
+    """
+    if not zip5 or len(zip5) < 3:
+        return None
+    prefix = zip5[:3]
+    coords = AL_ZIP_CENTROIDS.get(prefix)
+    if coords is None:
+        return None
+    return haversine(BIRMINGHAM_LAT, BIRMINGHAM_LON, coords[0], coords[1])
 
 
 def score_waste_volume(lead):
-    """Score waste volume potential (0-35 scale)."""
+    """Score waste volume potential (0-25 scale, log-scaled)."""
     waste = lead.get("estimated_waste_lbs_per_day")
     if not waste or waste <= 0:
-        return 5  # Baseline for unknown waste volume
+        return 3  # Baseline for unknown waste volume
 
-    # Normalize to 0-35 scale with diminishing returns (square root)
-    normalized = min(waste / MAX_WASTE_FOR_SCORING, 1.0)
-    return round(normalized ** 0.5 * 35, 1)
+    # Log scale: log(1+waste) / log(1+MAX) * 25
+    score = math.log1p(waste) / math.log1p(MAX_WASTE_FOR_SCORING) * 25
+    return round(min(score, 25), 1)
 
 
 def score_facility_type(lead):
-    """Score facility type priority (0-20 scale)."""
+    """Score facility type priority (0-30 scale)."""
     facility_type = lead.get("facility_type", "Other")
     return FACILITY_TYPE_SCORES.get(facility_type, 1)
 
 
 def score_proximity(lead):
-    """Score geographic proximity to Birmingham (0-25 scale)."""
+    """Score geographic proximity to Birmingham (0-15 scale).
+
+    Uses actual distance if available, otherwise computes from ZIP centroid.
+    """
     distance = lead.get("distance_from_birmingham")
+
+    # ZIP centroid fallback
     if distance is None:
-        return 10  # Midpoint for unknown distance
+        zip5 = lead.get("zip5") or lead.get("zip") or ""
+        distance = _zip_to_distance(zip5)
+
+    if distance is None:
+        return 5  # True unknown — no ZIP match
 
     for threshold, score in PROXIMITY_THRESHOLDS:
         if distance <= threshold:
             return score
-    return 2
+    return 1
 
 
-def score_contract_expiry(lead):
-    """Score contract expiry proximity (0-10 scale).
+def score_opportunity(lead):
+    """Score opportunity window (0-15 scale).
 
-    Known expiring within 6mo = 10
-    Known expiring within 1yr = 7
-    Unknown = 5 (neutral)
-    Locked >1yr = 2
+    Merges contract expiry proximity and facility age into one component.
+    Contract expiry: max 8 points. Facility age: max 7 points.
     """
+    # --- Contract expiry (0-8) ---
+    contract_score = 4  # Neutral default for unknown
     expiry_str = lead.get("contract_expiry_date")
-    if not expiry_str:
-        return 5  # Neutral for unknown
+    if expiry_str:
+        try:
+            if isinstance(expiry_str, date) and not isinstance(expiry_str, datetime):
+                expiry = expiry_str
+            else:
+                expiry = datetime.strptime(str(expiry_str)[:10], "%Y-%m-%d").date()
 
-    try:
-        if isinstance(expiry_str, date):
-            expiry = expiry_str
-        else:
-            expiry = datetime.strptime(str(expiry_str)[:10], "%Y-%m-%d").date()
+            days_until = (expiry - date.today()).days
+            if days_until <= 0:
+                contract_score = 8   # Already expired
+            elif days_until <= 180:
+                contract_score = 8   # Expiring within 6 months
+            elif days_until <= 365:
+                contract_score = 5   # Expiring within 1 year
+            else:
+                contract_score = 1   # Locked >1 year
+        except (ValueError, TypeError):
+            contract_score = 4
 
-        days_until = (expiry - date.today()).days
-
-        if days_until <= 0:
-            return 10  # Already expired — hot opportunity
-        elif days_until <= 180:
-            return 10  # Expiring within 6 months
-        elif days_until <= 365:
-            return 7   # Expiring within 1 year
-        else:
-            return 2   # Locked >1 year
-    except (ValueError, TypeError):
-        return 5  # Can't parse — treat as unknown
-
-
-def score_facility_age(lead):
-    """Score facility age from NPI enumeration date (0-10 scale).
-
-    Newer facilities are higher priority — they may not have
-    established waste disposal contracts yet.
-    <2 years = 10, <5 years = 8, <10 years = 5, >10 years = 3
-    """
+    # --- Facility age (0-7) ---
+    age_score = 3  # Neutral default for unknown
     est_str = lead.get("facility_established_date")
-    if not est_str:
-        return 5  # Neutral for unknown
+    if est_str:
+        try:
+            if isinstance(est_str, date) and not isinstance(est_str, datetime):
+                est_date = est_str
+            else:
+                est_date = datetime.strptime(str(est_str)[:10], "%Y-%m-%d").date()
 
-    try:
-        if isinstance(est_str, date):
-            est_date = est_str
+            years = (date.today() - est_date).days / 365.25
+            if years < 1:
+                age_score = 7
+            elif years < 2:
+                age_score = 6
+            elif years < 3:
+                age_score = 5
+            elif years < 5:
+                age_score = 4
+            elif years < 8:
+                age_score = 3
+            elif years < 12:
+                age_score = 2
+            elif years < 20:
+                age_score = 1
+            else:
+                age_score = 0
+        except (ValueError, TypeError):
+            age_score = 3
+
+    return min(contract_score + age_score, 15)
+
+
+def score_data_confidence(lead):
+    """Score data confidence (0-15 scale).
+
+    NPI-2 organizations: +7 over NPI-1 individuals.
+    Completeness score: 0-5 points.
+    Multi-source leads: 0-3 points.
+    """
+    score = 0
+
+    # Entity type: NPI-2 (org) vs NPI-1 (individual)
+    entity = lead.get("entity_type", "")
+    if entity == "NPI-2":
+        score += 7
+    elif entity == "NPI-1":
+        score += 0
+    else:
+        score += 3  # Unknown entity type
+
+    # Completeness score (0.0-1.0 mapped to 0-5)
+    completeness = lead.get("completeness_score")
+    if completeness is not None:
+        score += round(completeness * 5, 1)
+    else:
+        score += 2  # Neutral
+
+    # Multi-source bonus (0-3)
+    sources = lead.get("sources", [])
+    num_sources = len(sources) if isinstance(sources, list) else 0
+    if num_sources >= 3:
+        score += 3
+    elif num_sources == 2:
+        score += 2
+    elif num_sources == 1:
+        score += 0
+    else:
+        score += 0
+
+    return min(round(score, 1), 15)
+
+
+def assign_tiers(leads):
+    """Assign tiers based on percentile cutoffs.
+
+    Hot:  top 12%
+    Warm: next 28%  (top 12-40%)
+    Cool: next 35%  (top 40-75%)
+    Cold: bottom 25%
+    """
+    if not leads:
+        return
+
+    # Sort by score descending to determine percentile cutoffs
+    scores = sorted([l.get("lead_score", 0) for l in leads], reverse=True)
+    n = len(scores)
+
+    hot_idx = max(0, int(n * 0.12) - 1)
+    warm_idx = max(0, int(n * 0.40) - 1)
+    cool_idx = max(0, int(n * 0.75) - 1)
+
+    hot_cutoff = scores[hot_idx]
+    warm_cutoff = scores[warm_idx]
+    cool_cutoff = scores[cool_idx]
+
+    for lead in leads:
+        s = lead.get("lead_score", 0)
+        if s >= hot_cutoff:
+            lead["priority_tier"] = "Hot"
+        elif s >= warm_cutoff:
+            lead["priority_tier"] = "Warm"
+        elif s >= cool_cutoff:
+            lead["priority_tier"] = "Cool"
         else:
-            est_date = datetime.strptime(str(est_str)[:10], "%Y-%m-%d").date()
-
-        years = (date.today() - est_date).days / 365.25
-
-        if years < 2:
-            return 10
-        elif years < 5:
-            return 8
-        elif years < 10:
-            return 5
-        else:
-            return 3
-    except (ValueError, TypeError):
-        return 5  # Can't parse — treat as unknown
-
-
-def get_tier(score):
-    """Map a numeric score to a priority tier."""
-    for threshold, tier in TIER_THRESHOLDS:
-        if score >= threshold:
-            return tier
-    return "Cold"
+            lead["priority_tier"] = "Cold"
 
 
 def score_lead(lead):
@@ -173,24 +256,22 @@ def score_lead(lead):
     waste_score = score_waste_volume(lead)
     type_score = score_facility_type(lead)
     proximity_score = score_proximity(lead)
-    contract_score = score_contract_expiry(lead)
-    age_score = score_facility_age(lead)
+    opportunity_score = score_opportunity(lead)
+    confidence_score = score_data_confidence(lead)
 
     total = round(waste_score + type_score + proximity_score +
-                  contract_score + age_score)
+                  opportunity_score + confidence_score)
     total = min(total, 100)
-
-    tier = get_tier(total)
 
     breakdown = {
         "waste_volume": waste_score,
         "facility_type": type_score,
         "proximity": proximity_score,
-        "contract_expiry": contract_score,
-        "facility_age": age_score,
+        "opportunity": opportunity_score,
+        "data_confidence": confidence_score,
     }
 
-    return total, tier, breakdown
+    return total, breakdown
 
 
 def score_all(leads):
@@ -199,17 +280,22 @@ def score_all(leads):
     print(f"  Leads to score: {len(leads)}")
     print()
 
-    tier_counts = {"Hot": 0, "Warm": 0, "Cool": 0, "Cold": 0}
-
     for lead in leads:
-        total, tier, breakdown = score_lead(lead)
+        total, breakdown = score_lead(lead)
         lead["lead_score"] = total
-        lead["priority_tier"] = tier
         lead["score_breakdown"] = breakdown
-        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+
+    # Assign tiers using percentile cutoffs
+    assign_tiers(leads)
 
     # Sort by score descending
     leads.sort(key=lambda l: l.get("lead_score", 0), reverse=True)
+
+    # Count tiers
+    tier_counts = {"Hot": 0, "Warm": 0, "Cool": 0, "Cold": 0}
+    for lead in leads:
+        tier = lead.get("priority_tier", "Cold")
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
 
     # Print summary
     print("--- Scoring Summary ---")
@@ -217,6 +303,11 @@ def score_all(leads):
         count = tier_counts[tier]
         pct = (count / len(leads) * 100) if leads else 0
         print(f"  {tier}: {count} ({pct:.1f}%)")
+
+    # Score range
+    if leads:
+        scores = [l["lead_score"] for l in leads]
+        print(f"\n  Score range: {min(scores)} — {max(scores)}")
     print()
 
     # Top 10 leads
@@ -258,7 +349,7 @@ def score_from_db():
 
     rows = fetch_all("""
         SELECT id, lead_uid, facility_name, facility_type, city, zip5,
-               npi_number, license_number, administrator,
+               npi_number, license_number, administrator, entity_type,
                bed_count, estimated_waste_lbs_per_day,
                distance_from_birmingham, completeness_score,
                facility_established_date, contract_expiry_date
