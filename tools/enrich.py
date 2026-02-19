@@ -25,6 +25,7 @@ from tools.enrichment_plugins.waste_volume import WasteVolumeEstimator
 from tools.enrichment_plugins.geo_distance import GeoDistanceCalculator
 from tools.enrichment_plugins.cms_bed_count import CMSBedCountEnricher
 from tools.enrichment_plugins.data_completeness import DataCompletenessScorer
+from tools.enrichment_plugins.hunter_email import HunterEmailEnricher
 
 # Registry of available plugins
 AVAILABLE_PLUGINS = {
@@ -32,10 +33,11 @@ AVAILABLE_PLUGINS = {
     "geo_distance": GeoDistanceCalculator,
     "cms_bed_count": CMSBedCountEnricher,
     "data_completeness": DataCompletenessScorer,
+    "hunter_email": HunterEmailEnricher,
 }
 
 # Default plugin execution order (data_completeness should run last)
-DEFAULT_ORDER = ["cms_bed_count", "waste_volume", "geo_distance", "data_completeness"]
+DEFAULT_ORDER = ["cms_bed_count", "waste_volume", "geo_distance", "hunter_email", "data_completeness"]
 
 ENRICHMENT_LOG_FILE = os.path.join(PROJECT_ROOT, ".tmp", "enrichment_log.json")
 
@@ -207,7 +209,8 @@ def enrich_from_db(plugin_names=None, dry_run=False):
                taxonomy_code, entity_type, bed_count,
                estimated_waste_lbs_per_day, distance_from_birmingham,
                latitude, longitude, facility_established_date,
-               contract_expiry_date
+               contract_expiry_date,
+               contact_email, contact_name, contact_title, email_confidence
         FROM leads
     """)
 
@@ -233,6 +236,10 @@ def enrich_from_db(plugin_names=None, dry_run=False):
                         latitude = COALESCE(%s, latitude),
                         longitude = COALESCE(%s, longitude),
                         completeness_score = %s,
+                        contact_email = COALESCE(%s, contact_email),
+                        contact_name = COALESCE(%s, contact_name),
+                        contact_title = COALESCE(%s, contact_title),
+                        email_confidence = COALESCE(%s, email_confidence),
                         last_updated = NOW()
                     WHERE id = %s
                 """, (
@@ -245,6 +252,10 @@ def enrich_from_db(plugin_names=None, dry_run=False):
                     lead.get("latitude"),
                     lead.get("longitude"),
                     lead.get("completeness_score"),
+                    lead.get("contact_email"),
+                    lead.get("contact_name"),
+                    lead.get("contact_title"),
+                    lead.get("email_confidence"),
                     lead["id"],
                 ))
         print("  Database updated")

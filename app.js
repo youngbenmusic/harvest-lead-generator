@@ -119,7 +119,7 @@
       if (statusFilter && l.status !== statusFilter) return false;
       if (tierFilter && l.priority_tier !== tierFilter) return false;
       if (query) {
-        const haystack = (l.name + " " + l.city).toLowerCase();
+        const haystack = (l.name + " " + l.city + " " + (l.contact_email || "") + " " + (l.contact_name || "")).toLowerCase();
         if (!haystack.includes(query)) return false;
       }
       return true;
@@ -198,6 +198,7 @@
         <td>${escHtml(titleCase(lead.city))}</td>
         <td class="hide-mobile">${renderScore(lead)}</td>
         <td class="hide-mobile">${escHtml(lead.phone)}</td>
+        <td class="hide-mobile">${lead.contact_email ? `<a href="mailto:${escHtml(lead.contact_email)}" onclick="event.stopPropagation()">${escHtml(lead.contact_email)}</a>` : ""}</td>
         <td>${statusPill(lead.status)}</td>
       `;
       tbody.appendChild(tr);
@@ -248,7 +249,7 @@
     const tr = document.createElement("tr");
     tr.classList.add("detail-row");
     const td = document.createElement("td");
-    td.colSpan = 6;
+    td.colSpan = 7;
 
     const fullAddr = [lead.address, lead.city, lead.state, lead.zip]
       .filter(Boolean).join(", ");
@@ -270,6 +271,18 @@
         <div class="detail-field">
           <label>Fax</label>
           <span>${escHtml(lead.fax || "\u2014")}</span>
+        </div>
+        <div class="detail-field">
+          <label>Contact Email</label>
+          <span>${lead.contact_email ? `<a href="mailto:${escHtml(lead.contact_email)}">${escHtml(lead.contact_email)}</a>` : "\u2014"}</span>
+        </div>
+        <div class="detail-field">
+          <label>Contact Name</label>
+          <span>${escHtml(lead.contact_name || "\u2014")}</span>
+        </div>
+        <div class="detail-field">
+          <label>Contact Title</label>
+          <span>${escHtml(lead.contact_title || "\u2014")}</span>
         </div>
         <div class="detail-field">
           <label>NPI Number</label>
@@ -445,7 +458,8 @@
                      "Phone", "Fax", "NPI", "Taxonomy", "Status", "Notes", "Date Added",
                      "Lead Score", "Priority Tier", "Est. RMW (lbs/day)",
                      "Distance (mi)", "Service Zone", "Bed Count",
-                     "Latitude", "Longitude", "Facility Est. Date", "Contract Expiry"];
+                     "Latitude", "Longitude", "Facility Est. Date", "Contract Expiry",
+                     "Contact Email", "Contact Name", "Contact Title"];
     const rows = filtered.map((l) => [
       l.name, l.facility_type, l.address, l.city, l.state, l.zip,
       l.phone, l.fax, l.npi_number, l.taxonomy_code, l.status, l.notes, l.date_added,
@@ -453,6 +467,7 @@
       l.distance_from_birmingham || "", l.service_zone || "", l.bed_count != null ? l.bed_count : "",
       l.latitude || "", l.longitude || "", l.facility_established_date || "",
       l.contract_expiry_date || "",
+      l.contact_email || "", l.contact_name || "", l.contact_title || "",
     ]);
 
     let csv = headers.map(csvEsc).join(",") + "\n";

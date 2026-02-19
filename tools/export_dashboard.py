@@ -32,7 +32,8 @@ def export():
             waste_tier, distance_from_birmingham, service_zone,
             completeness_score, lead_score, priority_tier,
             status, notes, date_added, first_seen, last_updated,
-            latitude, longitude, facility_established_date
+            latitude, longitude, facility_established_date,
+            contact_email, contact_name, contact_title
         FROM leads
         ORDER BY facility_type, facility_name
     """)
@@ -68,6 +69,9 @@ def export():
             "latitude": float(row["latitude"]) if row["latitude"] else None,
             "longitude": float(row["longitude"]) if row["longitude"] else None,
             "facility_established_date": row["facility_established_date"].isoformat() if row["facility_established_date"] else None,
+            "contact_email": row["contact_email"] or "",
+            "contact_name": row["contact_name"] or "",
+            "contact_title": row["contact_title"] or "",
         }
         leads.append(lead)
 
@@ -127,6 +131,9 @@ def export_from_json():
             "latitude": row.get("latitude"),
             "longitude": row.get("longitude"),
             "facility_established_date": row.get("facility_established_date"),
+            "contact_email": row.get("contact_email", ""),
+            "contact_name": row.get("contact_name", ""),
+            "contact_title": row.get("contact_title", ""),
         }
         dashboard_leads.append(lead)
 
